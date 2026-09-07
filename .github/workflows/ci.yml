@@ -1,0 +1,657 @@
+name: CI
+
+on:
+  # Only main on push. Every other branch is covered by `pull_request`, so an
+  # unrestricted `push:` built the same SHA twice on any branch with an open PR —
+  # literally doubling the queue on the single self-hosted runner.
+  # deploy.yml keys off `workflow_run` on CI @ main, so CD is unaffected.
+  push:
+    branches: [main]
+  pull_request:
+
+# (F-15) Least-privilege default token. Every job here only reads the repo
+# (checkout) and runs tests/scans — none of them write to the repo, packages,
+# or deployments — so the default GITHUB_TOKEN is scoped down to read-only.
+# A job that needs more (e.g. the image scan uploading SARIF) raises its own
+# `permissions:` block locally.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save runner minutes — but ONLY for
+# pull_request runs. `push:` above is restricted to `main`, so github.ref is
+# the literal string `refs/heads/main` for EVERY push to main, always the same
+# value — a ref-only group therefore puts every main-push CI run in one
+# shared bucket. With cancel-in-progress:true that means merge #2 cancels
+# merge #1's still-running CI outright (conclusion `cancelled`, not
+# `failure`), and deploy.yml's `workflow_run` gate then reports `skipped`
+# because a cancelled run never reaches `conclusion == success` — production
+# silently stops shipping even though nothing failed. Reproduced live
+# (MUDD-150): CI run 33984974665 (commit ef474f68) was cancelled the instant
+# CI run 33988146814 (commit bc482770) started, which was itself cancelled
+# the instant the run for d24f2f70 started — three merges to main in under an
+# hour, each one killing the previous merge's CI. Keying the group by the
+# commit SHA for push events makes every main-push run's group unique, so it
+# can never collide with (and be cancelled by) another main push; PR runs
+# keep the original ref-based grouping so a new commit on the same PR still
+# cancels that PR's own stale run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint + unit tests + type check. The unit suite needs NO external services:
+  # app.config requires DATABASE_URL / DATABASE_URL_SYNC / REDIS_URL /
+  # TELEGRAM_BOT_TOKEN at import time. tests/conftest.py supplies dummy values
+  # via os.environ.setdefault; we also set them here at job level so the gate is
+  # robust even if that conftest is ever removed. (They are never connected to
+  # in the unit suite — they only satisfy the pydantic-settings required fields.)
+  # ---------------------------------------------------------------------------
+  lint-test:
+    name: Lint, test, type-check
+    runs-on: ubuntu-latest
+    # (MUDD-153) GitHub-hosted: each run gets its own throwaway VM, so the
+    # runner-hostage risk the self-hosted fleet had (one hung step blocking a
+    # shared Mac mini for hours — MUDD-90) does not apply here. Kept as a
+    # sane upper bound regardless.
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL_SYNC: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      REDIS_URL: redis://localhost:6379/0
+      TELEGRAM_BOT_TOKEN: "0000000000:dummy-ci-token"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv (with Python 3.12)
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.x"
+          python-version: "3.12"
+
+      - name: Install dependencies (incl. dev group)
+        run: uv sync --locked --dev
+
+      # LINT — blocking. Ruff config lives in backend/pyproject.toml.
+      - name: Ruff (lint)
+        run: uv run ruff check .
+
+      # TESTS — blocking. Pure unit suite; dummy env vars supplied above.
+      - name: Pytest
+        run: uv run pytest -q
+
+      # TYPE CHECK — BLOCKING. The pre-existing backlog reached zero, so mypy is
+      # now a hard gate: any new type error fails the build (no regressions).
+      - name: Mypy
+        run: uv run mypy app
+
+  # ---------------------------------------------------------------------------
+  # Migration check — blocking. Spins up a real Postgres 16 and applies the
+  # whole Alembic chain against a fresh database to prove every revision still
+  # applies cleanly. alembic/env.py injects the URL from
+  # settings.database_url_sync (a psycopg/sync URL), which pydantic-settings
+  # reads from the DATABASE_URL_SYNC env var — hence we point that at the
+  # service container. app.config (imported by env.py) also requires
+  # DATABASE_URL / REDIS_URL / TELEGRAM_BOT_TOKEN, so we provide those too.
+  # ---------------------------------------------------------------------------
+  migrations:
+    name: Alembic migrations
+    runs-on: ubuntu-latest
+    # (MUDD-153) GitHub-hosted: each run gets its own throwaway VM. See the
+    # identical note on `lint-test` above.
+    #
+    # (MUDD-90) Was 20. Run 33006952594 measured 20m09s with EVERY step
+    # `success` — the timeout cancelled a job that was still passing, which
+    # skipped the production deploy behind it. uv sync + the full Alembic
+    # chain (40+ revisions) + the RLS preflight is real work with real
+    # variance (cache state, host memory pressure — see docs/CI_CD_POLICY.md
+    # Sec.4), not a hang; a 9-second margin over the observed worst case was
+    # never a buffer. 35 gives ~70% headroom over that measurement — kept as
+    # the starting cap on GitHub-hosted too, pending the first proof-run
+    # timing (docs/CI_CD_POLICY.md §1).
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: backend
+    # (MUDD-153) `services:` containers are Linux-only, which is exactly what
+    # ubuntu-latest is — no more hand-rolled `docker run`/`pg_isready` loop.
+    # GitHub starts this before any step runs and only lets steps begin once
+    # `--health-cmd` reports healthy, so there is no readiness race to poll
+    # for by hand.
+    #
+    # Run-scoped isolation (MUDD-90's original concern — two concurrent runs
+    # colliding on one Postgres) is preserved by construction, not by naming:
+    # each GitHub-hosted run gets its own dedicated, throwaway VM, so this
+    # container can never be shared with another run the way it was on the
+    # single shared Mac mini. The tenant-isolation/RLS tests' OWN isolation
+    # (a fresh `public` schema per fixture, serialized by an advisory lock —
+    # see backend/tests/_schema_lock.py and conftest.py's `isolation_ctx`) is
+    # unrelated to this container and is untouched by this change.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      REDIS_URL: redis://localhost:6379/0
+      TELEGRAM_BOT_TOKEN: "0000000000:dummy-ci-token"
+      # Not a secret: a throwaway password for an ephemeral container that is
+      # destroyed with the job. The real one is a Fly secret and appears nowhere
+      # in this repository.
+      RUNTIME_DB_PASSWORD: ci-runtime-pw
+      # The service container's port is fixed (5432:5432 above, unlike the old
+      # dynamically-assigned self-hosted port), so these can be declared
+      # up front instead of written to $GITHUB_ENV at runtime.
+      MIGRATION_DATABASE_URL_SYNC: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL_SYNC: postgresql+psycopg://muddato_api:ci-runtime-pw@localhost:5432/postgres
+      DATABASE_URL: postgresql+asyncpg://muddato_api:ci-runtime-pw@localhost:5432/postgres
+      MUDDATO_BOOTSTRAP_MIGRATION_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv (with Python 3.12)
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.x"
+          python-version: "3.12"
+
+      - name: Install dependencies (incl. dev group)
+        run: uv sync --locked --dev
+
+      - name: Alembic upgrade head (fresh DB, MIGRATION credential)
+        run: uv run alembic upgrade head
+
+      # The migration creates `muddato_api` with no password, which cannot
+      # authenticate. This is the out-of-band step that gives it one — the same
+      # script an operator runs against a real cluster, so the path is exercised
+      # on every pull request rather than only at cutover.
+      - name: Provision the restricted runtime login
+        run: uv run python -m scripts.bootstrap_runtime_login
+
+      # (Batch 5, extended by the independent-review correction) The posture
+      # check the deploy pipeline runs before traffic. It now validates BOTH
+      # identities separately — the restricted application login on
+      # DATABASE_URL_SYNC and the schema owner on MIGRATION_DATABASE_URL_SYNC —
+      # plus the webhook and identity postures. Running it here means a
+      # migration or a route that regresses any of them fails on the pull
+      # request, not at release time. Read-only: every probe is a SELECT inside
+      # a rolled-back transaction, and it prints no row data.
+      - name: RLS preflight (both credentials, fail-closed posture)
+        run: uv run python -m app.cli.rls_preflight
+
+  # ---------------------------------------------------------------------------
+  # HTTP integration tier (#79) — tenant-isolation tests against a real Postgres.
+  # Skipped locally (no TEST_DATABASE_URL); here a postgres:16 service provides
+  # one. The app's get_db is overridden onto an ephemeral schema (conftest
+  # isolation_ctx), so a user authenticated for tenant A provably cannot reach
+  # tenant B's data. The DB-free HTTP auth-gate tests (test_http_auth.py) run in
+  # the lint-test job above.
+  #
+  # (F-17) This job runs on EVERY push and pull_request (see top-level `on:`),
+  # giving the #1 multi-tenant risk a behavioural net on every PR — not just in a
+  # nightly/optional lane. It provisions an ephemeral Postgres `services:`
+  # container and sets TEST_DATABASE_URL so test_tenant_isolation.py and
+  # test_rls_enforcement.py actually execute instead of pytest.skip-ing. This job
+  # ("HTTP integration (tenant isolation)") MUST be listed as a required status
+  # check in branch protection — see docs/CI_CD_POLICY.md.
+  # ---------------------------------------------------------------------------
+  integration:
+    name: HTTP integration (tenant isolation)
+    runs-on: ubuntu-latest
+    # (MUDD-153) GitHub-hosted: each run gets its own throwaway VM — see the
+    # identical note on `lint-test` above. The 3-concurrent-self-hosted-runner
+    # math behind the old 60-minute figure (MUDD-100) no longer applies
+    # (GitHub-hosted concurrency is per-workflow-queue, not a fixed 3-runner
+    # pool), but the cap is left at 60 pending the first proof-run timing
+    # (docs/CI_CD_POLICY.md §1) rather than guessed down.
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: backend
+    # (MUDD-153) See the identical `services:` block and its rationale on the
+    # `migrations` job above — same reasoning applies here.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      REDIS_URL: redis://localhost:6379/0
+      TELEGRAM_BOT_TOKEN: "0000000000:dummy-ci-token"
+      RUNTIME_DB_PASSWORD: ci-runtime-pw
+      # Fixed service-container port (5432:5432 above), so these are declared
+      # up front instead of written to $GITHUB_ENV at runtime — see the
+      # identical change on the `migrations` job above.
+      DATABASE_URL: postgresql+asyncpg://muddato_api:ci-runtime-pw@localhost:5432/postgres
+      DATABASE_URL_SYNC: postgresql+psycopg://muddato_api:ci-runtime-pw@localhost:5432/postgres
+      MIGRATION_DATABASE_URL_SYNC: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+      TEST_RUNTIME_DATABASE_URL: postgresql+asyncpg://muddato_api:ci-runtime-pw@localhost:5432/postgres
+      TEST_SUPERUSER_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+      MUDDATO_BOOTSTRAP_MIGRATION_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv (with Python 3.12)
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.x"
+          python-version: "3.12"
+
+      - name: Install dependencies (incl. dev group)
+        run: uv sync --locked --dev
+
+      # The restricted login has to exist before anything can connect as it.
+      # Same script as production, same path exercised on every pull request.
+      - name: Provision the restricted runtime login
+        run: uv run alembic upgrade head && uv run python -m scripts.bootstrap_runtime_login
+
+      # (F-17) Run the two tenant-isolation proofs explicitly and FIRST, so the
+      # single most important multi-tenant security property is verified on every
+      # PR and can never be silently dropped if the full-suite command below is
+      # ever edited. These require TEST_DATABASE_URL (set above) — otherwise they
+      # pytest.skip. `--no-cov` here so coverage is measured once, on the full run.
+      - name: Tenant-isolation + RLS enforcement tests (real Postgres)
+        run: uv run pytest tests/test_tenant_isolation.py tests/test_rls_enforcement.py -q
+
+      # The credential split, the webhook ordering, the identity bootstrap and
+      # the sixteen mutation proofs — run explicitly and early, for the same
+      # reason as the line above: these are the properties the Batch 5
+      # independent review found missing, and they must not be able to vanish
+      # into a full-suite command nobody reads.
+      - name: Credential / webhook / identity security proofs
+        run: >-
+          uv run pytest -q
+          tests/test_runtime_credential_isolation.py
+          tests/test_webhook_authority_order.py
+          tests/test_identity_bootstrap_capability.py
+          tests/test_batch5_mutation_proofs.py
+
+      # Run the FULL suite against the real Postgres: DB-free tests pass as in
+      # lint-test, and every DB-backed test (tenant isolation, RLS, payment
+      # integrity, KYC media, retention, privacy erasure, webapp auth) actually
+      # runs instead of skipping — no hand-maintained file list to fall out of date.
+      # (#176) Coverage floor: gate app/ line coverage on the full-suite run so it
+      # can't silently regress (current ~51%; raise the bar as coverage improves).
+      - name: Integration tests (full suite, real Postgres) + coverage floor
+        run: uv run pytest --cov=app --cov-fail-under=50 -q
+
+  # ---------------------------------------------------------------------------
+  # Frontend — lint + type-check + unit tests + build. The frontend was entirely
+  # absent from CI; this gate matches the backend's blocking bar (eslint
+  # --max-warnings 0, tsc -b, vitest, vite build). Pure-JS vitest needs no
+  # services. All commands are static — no untrusted workflow input is used.
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Frontend lint, type-check, test, build
+    runs-on: ubuntu-latest
+    # (MUDD-153) GitHub-hosted: each run gets its own throwaway VM — see the
+    # identical note on `lint-test` above.
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          # Pinned to the version used locally + that generated the lockfile.
+          # (pnpm 11.x needs Node >= 22.13 — see the Node 22 setup below.)
+          #
+          # (MUDD-153) The old `dest: ~/setup-pnpm-${{ runner.name }}` override
+          # (MUDD-80) existed only because the self-hosted Mac mini ran several
+          # runner processes under one shared $HOME, so concurrent frontend
+          # jobs wrote/pruned the same default pnpm store and corrupted each
+          # other's in-flight writes. GitHub-hosted `ubuntu-latest` gives every
+          # job its own fresh VM and $HOME, so that collision cannot happen —
+          # the default `dest` is used.
+          version: 11.5.1
+
+      - name: Set up Node 22 (pnpm cache)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # pnpm 11.x needs Node >= 22.13 (11.x bundles 22+ builtins; Node 20
+          # fails with ERR_UNKNOWN_BUILTIN_MODULE). 22 is the current LTS.
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint (lint)
+        run: pnpm lint
+
+      - name: Type-check (tsc -b)
+        run: pnpm typecheck
+
+      - name: Vitest (unit)
+        run: pnpm test
+
+      - name: Build (vite)
+        run: pnpm build
+
+  # ---------------------------------------------------------------------------
+  # Dependency CVE scan (#150) — blocking gate against known-vulnerable packages:
+  # pip-audit (backend) + pnpm audit (frontend). No suppressions: aiohttp is held at
+  # >=3.14 via a [tool.uv] override (#235) since aiogram still pins <3.14 upstream.
+  # Dependabot (.github/dependabot.yml) opens weekly update PRs to keep this passing.
+  # ---------------------------------------------------------------------------
+  security:
+    name: Dependency CVE scan
+    runs-on: ubuntu-latest
+    # (MUDD-153) GitHub-hosted: each run gets its own throwaway VM — see the
+    # identical note on `lint-test` above.
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up uv (with Python 3.12)
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.x"
+          python-version: "3.12"
+
+      - name: pip-audit (backend)
+        working-directory: backend
+        run: uv run --with pip-audit pip-audit
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.5.1
+          # (MUDD-153) No `dest` override — see the frontend job above; the
+          # self-hosted shared-$HOME collision (MUDD-80) this worked around
+          # cannot happen on GitHub-hosted `ubuntu-latest`.
+
+      - name: Set up Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm audit (frontend)
+        working-directory: frontend
+        run: pnpm audit --prod --audit-level moderate
+
+  # ---------------------------------------------------------------------------
+  # (F-29) Container image vulnerability scan — the dependency scan above covers
+  # our Python/JS packages; this covers the FINAL image's OS layer (Debian
+  # packages baked into the runtime stage). We build the backend image and run
+  # Trivy against it, failing the build on FIXABLE HIGH/CRITICAL OS/library vulns
+  # (unfixed ones don't block — nothing to upgrade to yet — but still surface in
+  # the SARIF uploaded to the Security tab). Trivy is SHA-pinned like every other
+  # action. Dependabot (github-actions) bumps the pin.
+  #
+  # CACHE: trivy-action's own `TRIVY_CACHE_DIR` env (set at the job level) is NOT
+  # what governs the actual scan — the composite action's "Run Trivy" step always
+  # re-exports `TRIVY_CACHE_DIR: ${{ inputs.cache-dir }}`, which defaults to
+  # `${{ github.workspace }}/.cache/trivy` unless `cache-dir:` is passed explicitly
+  # in EVERY `with:` block. A job-level env override is silently shadowed. That
+  # default lives inside the checkout root, so `actions/checkout`'s `git clean
+  # -ffdx` wipes it before every run — the DB (~108 MB) re-downloads from scratch
+  # every time regardless of any env var. `cache-dir` is set explicitly below to
+  # `${{ runner.temp }}/trivy-cache`, outside the checkout root, so it survives
+  # checkout.
+  #
+  # (MUDD-153) GitHub-hosted `ubuntu-latest` discards its whole VM after every
+  # run, so that directory alone does not persist anything across runs the way
+  # the old self-hosted Mac mini's real cache dir did — an `actions/cache`
+  # restore/save step (below, keyed weekly) now does that job instead. Trivy
+  # itself is not preinstalled on `ubuntu-latest` either, so `aquasecurity/
+  # setup-trivy` installs the CLI used to pre-warm the DB. trivy-action's own
+  # bundled GitHub Actions-cache round-trip (`cache:`, still default-on) is
+  # left alone — it caches the trivy *binary* (~44 MB via GH's own cache API,
+  # not the DB pull that actually caused the historical hang) and has shown no
+  # hang risk. The DB is pre-warmed via the native `trivy` CLI in its own
+  # timeout+retry-protected step so a hung download can't wedge the actual scan
+  # steps; those then reuse the warm cache (Trivy's own staleness check skips
+  # re-downloading a fresh DB — no extra flag needed). All three network-touching
+  # steps carry `timeout-minutes` so a wedge — cache-warm or not — fails fast
+  # instead of eating a runner slot for hours.
+  # ---------------------------------------------------------------------------
+  image-scan:
+    name: Container image scan (Trivy)
+    runs-on: ubuntu-latest
+    # (MUDD-153) GitHub-hosted: each run gets its own throwaway VM — see the
+    # identical note on `lint-test` above.
+    timeout-minutes: 30
+    # Read the repo; write security events so the SARIF lands in the Security tab.
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      # Pinned to the same Trivy release the `aquasecurity/trivy-action` pin
+      # below defaults to, so the CLI that pre-warms the DB (next steps) and
+      # the CLI trivy-action runs the actual scan with share one DB schema.
+      TRIVY_VERSION: v0.70.0
+      # Run-scoped so two concurrent runs cannot share, overwrite, or delete
+      # each other's scan image (MUDD-90). Unlike the Postgres host port this
+      # IS knowable before any step runs, so it belongs in `env:` rather than
+      # $GITHUB_ENV. Kept even though GitHub-hosted VMs are never shared
+      # between runs — cheap insurance, and keeps the tarball name
+      # self-documenting in logs.
+      SCAN_IMAGE: muddato-api:scan-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # (MUDD-153) `${{ runner.temp }}` instead of the old fixed, absolute
+      # host path under the self-hosted Mac mini's user home directory —
+      # GitHub-hosted `ubuntu-latest` gets a fresh VM per run, so there is no
+      # persistent host path to reuse. Wrapped in `actions/cache` below (keyed
+      # weekly) so the ~108 MB vulnerability DB still survives across runs
+      # instead of re-downloading from scratch every time. Written to
+      # $GITHUB_ENV rather than declared in the job-level `env:` block above
+      # because the `runner` context is only available to steps, not to a
+      # job's own `env:` (GitHub Actions resolves job-level `env:` before a
+      # runner is even assigned). Must still be passed explicitly via
+      # `cache-dir:` on every trivy-action step below — the composite ignores
+      # inherited env for its own TRIVY_CACHE_DIR.
+      - name: Set Trivy cache dir
+        run: echo "TRIVY_HOST_CACHE_DIR=${RUNNER_TEMP}/trivy-cache" >> "$GITHUB_ENV"
+
+      # (MUDD-153) Weekly cache key so the DB refreshes on a predictable
+      # cadence instead of growing one cache entry per run forever.
+      # `restore-keys` falls back to the most recent previous entry when this
+      # week's exact key hasn't been written yet, so the DB is still warm on
+      # the first run of a new week.
+      - name: Compute weekly cache key
+        id: cache-key
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Trivy vulnerability DB cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.TRIVY_HOST_CACHE_DIR }}
+          key: trivy-db-${{ steps.cache-key.outputs.week }}
+          restore-keys: |
+            trivy-db-
+
+      # Installs the native `trivy` CLI used to pre-warm the DB below.
+      # `ubuntu-latest` does not ship it, unlike the old self-hosted Mac mini.
+      - name: Set up Trivy CLI
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          cache: false
+
+      # Build the backend image locally, straight to a docker-format tarball
+      # (not pushed anywhere).
+      #
+      # (MUDD-90) The name embedded in the tarball is scoped to THIS run, for
+      # the same reason `SCAN_IMAGE` is above. `muddato-api:scan` was fixed
+      # on the old shared Mac mini, so two concurrent runs there shared it:
+      # the second run's `docker build` silently retagged the image out from
+      # under the first, which then scanned the WRONG commit and reported a
+      # verdict about code that was never in it. A run-scoped name makes that
+      # impossible by construction — kept as cheap insurance even though
+      # GitHub-hosted VMs are never shared between runs.
+      #
+      # (MUDD-101) This used to be `docker build -t "$SCAN_IMAGE" ./backend`,
+      # then `docker build --load -t "$SCAN_IMAGE" ./backend`, then Trivy
+      # scanned by name (`image-ref: $SCAN_IMAGE`) — both failed identically
+      # on the old self-hosted host: "unable to find the specified image ...
+      # in [docker containerd podman remote]", a store/API mismatch between
+      # whatever buildx loaded through and what the classic Docker Engine API
+      # could see by name. `--output type=docker,dest=<tar>` writes a
+      # self-contained Docker-format tarball straight to disk instead — no
+      # daemon, no store, no context/socket to mismatch. Trivy scans the
+      # tar's bytes directly via `input:` below.
+      #
+      # (MUDD-153) No more "Docker Desktop may be cold" retry/nudge loop —
+      # Docker on `ubuntu-latest` is an always-running system daemon, not a
+      # GUI app that needs relaunching.
+      - name: Build backend image
+        run: |
+          tar_path="${RUNNER_TEMP}/scan-image-${{ github.run_id }}-${{ github.run_attempt }}.tar"
+          echo "SCAN_IMAGE_TAR=$tar_path" >> "$GITHUB_ENV"
+          # ubuntu-latest's default buildx instance uses the legacy `docker`
+          # driver, which cannot export Docker archives. A disposable
+          # docker-container builder supports the exporter and is scoped
+          # to this throwaway runner.
+          docker buildx create --driver docker-container --use
+          docker buildx build --output "type=docker,name=$SCAN_IMAGE,dest=$tar_path" ./backend
+
+      # Fail fast and legibly here rather than let a missing/empty tarball
+      # surface as another cryptic Trivy "unable to find the specified image"
+      # failure one step later.
+      - name: Verify the image tarball was written
+        run: |
+          if [ ! -s "$SCAN_IMAGE_TAR" ]; then
+            echo "::error::Build reported success but $SCAN_IMAGE_TAR is missing or empty" && exit 1
+          fi
+          ls -lh "$SCAN_IMAGE_TAR"
+
+      # Pre-warm the vulnerability DB via the native trivy CLI (installed by
+      # `Set up Trivy CLI` above — not trivy-action's own bundled setup-trivy
+      # call, which has no "download DB only" mode; scanning with any
+      # scan-type always runs a full scan too). This isolates the actual
+      # network I/O into one retried, timeout-bounded step, separate from the
+      # scan logic below.
+      #
+      # (MUDD-153) The credential-helper hang this previously worked around
+      # (MUDD-118: `docker-credential-desktop get` blocking forever, because
+      # this runner's `~/.docker/config.json` had `"credsStore": "desktop"`)
+      # was a macOS Docker Desktop bug with no Linux equivalent —
+      # `ubuntu-latest`'s default docker config has no `credsStore` — so the
+      # DOCKER_CONFIG anonymous-auth override is dropped. The timeout+retry
+      # loop below is kept as generic insurance against ordinary transient
+      # network flakiness; a deadline force-kills with SIGKILL rather than
+      # SIGTERM since trivy's shutdown-on-SIGTERM path can itself hang, and
+      # `wait "$pid" 2>/dev/null || true` matters under `bash -e`: a
+      # SIGKILLed `wait` reports exit 137, which without the guard aborts the
+      # whole step instead of continuing the loop.
+      - name: Trivy download DB
+        timeout-minutes: 10
+        run: |
+          attempt_timeout=150
+          for attempt in 1 2 3; do
+            trivy image --download-db-only --cache-dir "$TRIVY_HOST_CACHE_DIR" &
+            pid=$!
+            waited=0
+            while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$attempt_timeout" ]; do
+              sleep 5
+              waited=$((waited + 5))
+            done
+            if kill -0 "$pid" 2>/dev/null; then
+              echo "trivy DB download (attempt $attempt/3) exceeded ${attempt_timeout}s with no response — force-killing and retrying"
+              kill -9 "$pid" 2>/dev/null
+              wait "$pid" 2>/dev/null || true
+              continue
+            fi
+            wait "$pid" && exit 0
+            echo "trivy DB download failed (attempt $attempt/3) — retrying"
+            sleep 5
+          done
+          echo "::error::Could not download the Trivy vulnerability DB after 3 attempts" && exit 1
+
+      # Gate: fail on fixable HIGH/CRITICAL. This is the ONLY container scan and
+      # the only thing that blocks — the findings live in this step's log.
+      #
+      # (MUDD-118) TRIVY_SKIP_DB_UPDATE is belt-and-suspenders: the previous
+      # step just pre-warmed this exact cache-dir specifically so the DB
+      # network I/O is isolated there. trivy's own NeedsUpdate check should
+      # already skip re-fetching a DB that fresh, but this step has no
+      # per-attempt timeout of its own — if that check ever decided
+      # otherwise, it would hang the same way the download step did.
+      - name: Trivy scan (fail on fixable HIGH/CRITICAL)
+        timeout-minutes: 10
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_SKIP_DB_UPDATE: "true"
+        with:
+          input: ${{ env.SCAN_IMAGE_TAR }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          version: ${{ env.TRIVY_VERSION }}
+          cache-dir: ${{ env.TRIVY_HOST_CACHE_DIR }}
+
+      # (CI-cost) A second Trivy scan + SARIF upload used to live here. Removed:
+      # it produced nothing anybody could read.
+      #
+      # `GET /repos/.../code-scanning/analyses` on this repository answers
+      # "Code scanning is not enabled for this repository." Code scanning needs
+      # GitHub Advanced Security, which a private repo on this plan does not
+      # have — the same plan wall that killed SBOM attestations (MUDD-82) and
+      # branch protection (docs/CI_CD_POLICY.md §2). The upload step reported
+      # `success` anyway, because it carried `continue-on-error: true`, so the
+      # waste was invisible: ~132s re-scanning the SAME image the gate above
+      # had just scanned, ~48s uploading into a disabled feature, ~20s of post
+      # steps. Roughly 200s of every CI run, for a report with no reader.
+      #
+      # The blocking table scan above is and always was the authoritative gate
+      # — the removed step never blocked anything (`continue-on-error`), so
+      # nothing about the security posture changes here.
+      #
+      # If Advanced Security is ever enabled, restore this by scanning ONCE to
+      # JSON and using `trivy convert` for both outputs — do not re-add a second
+      # full scan of the same image.
+
+      # (MUDD-153) GitHub-hosted `ubuntu-latest` discards the whole VM after
+      # the job, so this is no longer strictly required the way it was on the
+      # old persistent self-hosted Mac mini (where a scan tarball left behind
+      # by every run would have accumulated on its disk indefinitely) — kept
+      # anyway as tidy, cheap cleanup. (MUDD-101: the build no longer loads an
+      # image into any local docker/containerd store, so there is nothing for
+      # `docker rmi` to clean up — just the tarball itself.)
+      - name: Remove the scan image tarball
+        if: always()
+        continue-on-error: true
+        run: rm -f "${SCAN_IMAGE_TAR:-}"

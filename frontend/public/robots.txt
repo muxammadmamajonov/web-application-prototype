@@ -1,0 +1,13 @@
+# Muddato — crawl directives (#311)
+User-agent: *
+Allow: /$
+Allow: /uz
+Allow: /ru
+# Keep the authenticated SPA, auth, client area and single-use invite links out of the index.
+Disallow: /app
+Disallow: /auth
+Disallow: /me
+Disallow: /i/
+Disallow: /m/
+
+Sitemap: https://muddato.uz/sitemap.xml

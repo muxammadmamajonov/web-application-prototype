@@ -1,0 +1,63 @@
+# Force fresh HTML so SPA chunk URLs match the deployed bundle.
+# `no-store` (not just `no-cache`): the Telegram Mini-App WebView keeps a cached
+# index.html alive across minimise/relaunch and serves it stale even with
+# `no-cache, must-revalidate`, so a deploy isn't seen until the app is fully
+# closed. `no-store` forbids storing the HTML at all → every launch fetches the
+# latest asset URLs. Hashed assets still cache forever (immutable), so the only
+# extra cost is one small HTML refetch per launch.
+/
+  Cache-Control: no-store, must-revalidate
+/index.html
+  Cache-Control: no-store, must-revalidate
+/auth/*
+  Cache-Control: no-store, must-revalidate
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# ── Security headers ──────────────────────────────────────────────────────
+# Applied to every route. The app is a React SPA that runs standalone
+# (muddato.uz / muddato.pages.dev) AND embedded inside the Telegram WebApp
+# client, so frame-ancestors must allow Telegram to frame it.
+#
+# CSP is enforced (not report-only) and intentionally permissive enough to
+# avoid breaking the app:
+#   script-src   (F-28) 'unsafe-inline' DROPPED — the one executable inline script
+#                in index.html (the lang-detection bootstrap) is now allowed by its
+#                SHA-256 hash, so no other injected inline script can run. The
+#                JSON-LD block is type=application/ld+json (data, not governed by
+#                script-src); telegram.org is the Telegram WebApp SDK.
+#                ⚠ If that inline <script> in index.html changes, regenerate the
+#                hash (sha256 of the BUILT dist/index.html inline body) and update
+#                it below, or the bootstrap is silently blocked (app still loads;
+#                React/i18next re-sets <html lang>).
+#                NOTE: this strict policy intentionally also blocks Cloudflare Web
+#                Analytics (the static.cloudflareinsights.com beacon + its injected
+#                inline loader) — a third-party tracker. The app is unaffected. To
+#                silence the console notice, disable Web Analytics in the CF Pages
+#                dashboard (recommended); do NOT re-add 'unsafe-inline' to enable it.
+#   style-src    'unsafe-inline' for Tailwind / inline style attributes.
+#   img-src      data: + https: — catalog/product images come from archive.org
+#                and other arbitrary https hosts.
+#   connect-src  (F-28) explicit allowlist instead of the old blanket `https:`:
+#                'self' for the same-origin proxied /api; lookup.binlist.net for
+#                CardManager.tsx BIN lookups; *.ingest.sentry.io + the EU region
+#                host for Sentry event ingestion when VITE_SENTRY_DSN is set.
+#   frame-src    https://yandex.uz — ContactPage.tsx embeds the Yandex Maps
+#                widget in an <iframe>.
+#   frame-ancestors  The Telegram web hosts, so Telegram Web can frame the app.
+#                Never add a `scheme://` token here (e.g. `tg://`): a CSP scheme
+#                source is `scheme:` with no slashes, so that form is malformed
+#                and the browser drops it while still enforcing the rest of the
+#                directive. A framing ancestor is always an http(s) origin, so a
+#                custom app scheme could never match one either. Behaviour inside
+#                the native Telegram iOS/Android clients is unverified — see J-27.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-dW7fHvWRgJc5zYANdI8cTNJA/4sAsPXlZWoz/IWfm0I=' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; connect-src 'self' https://lookup.binlist.net https://*.ingest.sentry.io https://*.ingest.de.sentry.io; font-src 'self' data: https://fonts.gstatic.com; frame-src 'self' https://yandex.uz; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; base-uri 'self'; form-action 'self'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  # KEEP — this does not conflict with frame-ancestors and does not block
+  # Telegram. Per CSP2 §7.7.1 a browser that honours frame-ancestors ignores
+  # X-Frame-Options entirely; this is the fallback for clients that predate it.
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

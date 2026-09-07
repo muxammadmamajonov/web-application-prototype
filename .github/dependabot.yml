@@ -1,0 +1,53 @@
+# (#150) Dependabot — weekly dependency + security updates. Runs on GitHub's own
+# infrastructure independent of the Actions-workflow toggle, so security PRs/alerts
+# surface even while CI workflows are paused. Grouped + capped to keep PR noise low.
+#
+# (#789) Majors are kept OUT of the grouped PRs. A single grouped bump silently
+# bundled five MAJOR upgrades (Tailwind 3→4, Vite 6→8, Vitest 3→4, ESLint 8→10,
+# plugin-react-swc 3→4) into one PR that broke the frontend build — and with CI
+# paused for billing, nothing caught it. `update-types: [minor, patch]` groups only
+# the low-risk updates; every MAJOR now opens its OWN PR so it is reviewed and
+# verified in isolation (the correct cadence for breaking changes).
+version: 2
+updates:
+  - package-ecosystem: "pip"          # backend/pyproject.toml (uv)
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    groups:
+      backend-dependencies:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"          # frontend/package.json (pnpm)
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    groups:
+      frontend-dependencies:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
+    # (#979, MUDD-81) eslint-plugin-react-refresh 0.5.x required ESLint 9 and
+    # a flat config, which this repo now has (frontend/eslint.config.js). The
+    # `ignore` that held Dependabot back from proposing 0.5.x is no longer
+    # needed and has been removed.
+    ignore:
+      # (MUDD-96, MUDD-94 §4) Majors deliberately paused — the migration itself
+      # is scheduled in MUDD-97 (review: 2026-10-01). All three are devDependencies;
+      # minor/patch stay in the weekly flow. `update-types` here only affects
+      # Dependabot *version* updates — security updates ignore this filter and
+      # are still opened regardless (GitHub docs: dependabot-options-reference,
+      # "ignore" > "update-types").
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"   # .github/workflows/*.yml action pins
+    directory: "/"
+    schedule:
+      interval: "weekly"

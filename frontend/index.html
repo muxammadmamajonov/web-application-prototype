@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- (#589) Correct <html lang> from the URL locale before the JS bundle runs,
+         so a deep-linked RU page reports the right language to screen readers on
+         first read instead of the static "uz". i18n (path detection) keeps it in
+         sync after hydration; this only closes the pre-hydration window. -->
+    <script>
+      (function () {
+        var m = location.pathname.match(/^\/(ru|uz)(?:\/|$)/);
+        if (m) document.documentElement.lang = m[1];
+      })();
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Zoom is disabled platform-wide, by decision. NOTE for whoever reads this
+         next: `user-scalable=no` + `maximum-scale=1` is a WCAG 1.4.4 failure —
+         it blocks anyone who needs to magnify text. It is here because this
+         ships as a Telegram Mini App, which is chrome-less and where an
+         accidental pinch leaves the user stranded with no browser zoom control
+         to undo it; Telegram's own Mini Apps do the same. Revisit if the web
+         build ever becomes the primary surface. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#f7f4ef" />
+    <title>Muddato — Telegram'da bo'lib to'lash (nasiya) CRM</title>
+    <meta name="description" content="Muddato — Telegram orqali bo'lib to'lash savdosini boshqaring: mijozlar, to'lov jadvali, avtomatik eslatmalar va shartnomalar bitta paneldan." />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://muddato.uz/" />
+
+    <!-- Open Graph (link previews — must be static; social scrapers don't run JS) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Muddato" />
+    <meta property="og:title" content="Muddato — Telegram'da bo'lib to'lash (nasiya) CRM" />
+    <meta property="og:description" content="Telegram orqali bo'lib to'lash savdosi: mijozlar, to'lov jadvali, avtomatik eslatmalar va shartnomalar bitta paneldan." />
+    <meta property="og:url" content="https://muddato.uz/" />
+    <meta property="og:image" content="https://muddato.uz/hero-dashboard.png" />
+    <meta property="og:image:width" content="1446" />
+    <meta property="og:image:height" content="1114" />
+    <meta property="og:locale" content="uz_UZ" />
+    <meta property="og:locale:alternate" content="ru_RU" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Muddato — Telegram'da bo'lib to'lash (nasiya) CRM" />
+    <meta name="twitter:description" content="Telegram orqali bo'lib to'lash savdosi: mijozlar, to'lov jadvali, avtomatik eslatmalar va shartnomalar bitta paneldan." />
+    <meta name="twitter:image" content="https://muddato.uz/hero-dashboard.png" />
+
+    <!-- (#309) JSON-LD structured data — Organization + SoftwareApplication + FAQ.
+         Kept static in index.html so crawlers see it in the raw HTML (the app is
+         client-rendered). Validate with Google's Rich Results Test. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://muddato.uz/#organization",
+          "name": "Muddato",
+          "url": "https://muddato.uz/",
+          "logo": "https://muddato.uz/favicon.svg",
+          "description": "Telegram orqali bo'lib to'lash (nasiya) savdosini boshqaradigan CRM platformasi.",
+          "areaServed": "UZ"
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://muddato.uz/#app",
+          "name": "Muddato",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web, Android, iOS (Telegram Mini App)",
+          "url": "https://muddato.uz/",
+          "publisher": { "@id": "https://muddato.uz/#organization" },
+          "description": "Telegram orqali bo'lib to'lash savdosi: mijozlar, to'lov jadvali, avtomatik eslatmalar va shartnomalar bitta paneldan."
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://muddato.uz/#faq",
+          "mainEntity": [
+            { "@type": "Question", "name": "Muddato nima?", "acceptedAnswer": { "@type": "Answer", "text": "Telegram orqali bo'lib to'lash (nasiya) savdosini boshqaradigan CRM platformasi." } },
+            { "@type": "Question", "name": "Qaysi tillarni qo'llab-quvvatlaydi?", "acceptedAnswer": { "@type": "Answer", "text": "O'zbek va rus tillari." } },
+            { "@type": "Question", "name": "Demo bormi?", "acceptedAnswer": { "@type": "Answer", "text": "Ha, muddato.uz/uz/demo sahifasida demoni sinab ko'rish mumkin." } }
+          ]
+        }
+      ]
+    }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <!-- Telegram Mini-App SDK — load early so window.Telegram.WebApp.initData
+         is populated before React mounts. -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  </head>
+  <body class="min-h-screen bg-cream text-ink antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

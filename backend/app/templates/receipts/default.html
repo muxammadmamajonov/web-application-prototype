@@ -1,0 +1,94 @@
+<!doctype html>
+{# Thermal-print payment receipt — 80mm wide. Also prints fine on A4 (centred).
+
+   WHY THE ROWS ARE A GRID AND NOT A FLEXBOX. Every label/value line used
+   `display:flex; justify-content:space-between`, which on a 76mm-wide printable
+   area gives the value whatever space is left over — and a value longer than
+   that (a full timestamp, a long shop name) was laid out on top of its own
+   label. A grid with a fixed label column and a wrapping value column cannot do
+   that: the value gets a real column and wraps inside it.
+
+   Everything shown here is already formatted by `app/core/documents.py` before
+   it reaches the template — dates, money, payment method and status. The
+   template does no formatting of its own, which is how the receipt and the
+   contract are kept from writing the same number two different ways.
+#}
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<title>Chek {{ installment.contract_number }}</title>
+<style>
+  @page { size: 80mm 200mm; margin: 4mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "DejaVu Sans", sans-serif;
+    font-size: 9pt; color: #111; line-height: 1.35;
+    /* Customer, shop and product names are user text with no guaranteed
+       spaces. Without this one long token runs off a 72mm-wide page. */
+    overflow-wrap: anywhere;
+  }
+  h1 { font-size: 12pt; text-align: center; margin: 0 0 4px; }
+  .sub { text-align: center; font-size: 8pt; color: #444; margin-bottom: 6px; }
+  hr { border: none; border-top: 1px dashed #777; margin: 6px 0; }
+
+  /* The fix for the reported collision. `auto` on the label column lets a
+     long Russian label take what it needs; `minmax(0,1fr)` lets the value
+     column actually shrink and wrap instead of overflowing its track. */
+  .row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 8px;
+    align-items: start;
+    margin: 1px 0;
+  }
+  .row .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .row .v b { font-weight: 700; }
+  .big {
+    font-size: 13pt; font-weight: 800; text-align: center; margin: 6px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .foot { text-align: center; font-size: 8pt; color: #444; margin-top: 8px; }
+  .stamp { text-align: center; font-size: 8pt; color: #999; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>{{ settings_block.business_name or tenant.name }}</h1>
+  <div class="sub">
+    {%- if tenant.address %}{{ tenant.address }}<br>{% endif -%}
+    {%- if tenant.phone %}Tel: {{ tenant.phone }}{% endif -%}
+  </div>
+  <hr>
+
+  <div class="row"><span>Chek №</span><span class="v">{{ payment.short_id }}</span></div>
+  <div class="row"><span>Sana</span><span class="v">{{ payment.paid_at or today }}</span></div>
+  <div class="row"><span>Shartnoma</span><span class="v">{{ installment.contract_number }}</span></div>
+  <div class="row"><span>Mijoz</span><span class="v">{{ customer.full_name }}</span></div>
+
+  <hr>
+  <div class="big">{{ payment.amount }} {{ payment.currency_label }}</div>
+  <div class="row"><span>To'lov turi</span><span class="v"><b>{{ payment.method }}</b></span></div>
+  {% if payment.external_ref %}
+  <div class="row"><span>Ref</span><span class="v">{{ payment.external_ref }}</span></div>
+  {% endif %}
+  <div class="row"><span>Holat</span><span class="v"><b>{{ payment.status }}</b></span></div>
+
+  <hr>
+  {# The ledger knows this exactly, so it is stated exactly. The `≈` that used
+     to sit here claimed the shop could not answer "how much do I still owe",
+     and it prefixed the ORIGINAL principal rather than the remaining balance. #}
+  <div class="row">
+    <span>Qarz qoldiq</span>
+    <span class="v">{{ totals.remaining }} {{ payment.currency_label }}</span>
+  </div>
+  <div class="row">
+    <span>Keyingi to'lov</span>
+    <span class="v">{{ installment.monthly_amount }} {{ payment.currency_label }}</span>
+  </div>
+
+  {% if settings_block.receipt_footer %}
+  <hr>
+  <div class="foot">{{ settings_block.receipt_footer }}</div>
+  {% endif %}
+  <div class="stamp">Muddato · {{ today }}</div>
+</body>
+</html>

@@ -1,0 +1,93 @@
+# --- secrets / env ---
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# --- python / backend ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.egg
+.tox/
+
+# --- node / frontend ---
+node_modules/
+dist/
+build/
+.vite/
+.parcel-cache/
+.next/
+.turbo/
+*.tsbuildinfo
+.pnpm-store/
+
+# --- editors / os ---
+.DS_Store
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# --- deploy artefacts ---
+.vercel/
+.wrangler/
+.fly/
+.netlify/
+
+# --- local data / uploads ---
+storage/
+uploads/
+tmp/
+*.sqlite
+*.db
+
+# --- logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.clauge-worktrees/
+
+# Local Claude Code tooling (skills, launch config) — machine-local, not app code
+.claude/
+
+# (#631 follow-up / F-14) Generated knowledge-graph artifact — never commit; it
+# regenerates and produced a 172K-line poison diff across branches. The whole
+# directory is ignored (it was previously tracked by mistake — ~12 MB).
+graphify-out/
+
+# --- load-test output (F-14) — capture as CI artifacts, never commit. Only the
+# root k6 dump; tracked grafana dashboards under load-tests/ stay tracked. ---
+/baseline.json
+
+# --- repo backup bundles (F-14) — keep backups OFF-repo ---
+*.bundle
+
+# --- load-test results (F-16) — CI artifacts, never commit ---
+load-tests/results/
+
+# local-only env (dev mock etc.)
+.env*.local
+
+# --- audit reports belong in docs/audits/, never inside a package (MUDD-71 N2).
+# `frontend/.audit-report-mudd17.md` sat here as a 48 KB hidden dotfile inside the
+# npm package root — invisible to `ls`, outside every docs index, and carrying its
+# own stale `npm run build` instructions. Reports go to docs/audits/ or nowhere.
+frontend/.audit-*
+backend/.audit-*

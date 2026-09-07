@@ -1,0 +1,181 @@
+[project]
+name = "muddato-backend"
+version = "0.1.0"
+description = "Muddato — Telegram installment CRM backend (FastAPI + aiogram)."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    # web
+    "fastapi>=0.115",
+    # (audit) pin the patched ASGI floor — starlette <1.3.1 = form-limit-bypass
+    # DoS (GHSA-82w8-qh3p-5jfq) + authority poisoning; multipart <0.0.31 =
+    # quadratic-parse DoS (GHSA-v9pg-7xvm-68hf) + Content-Disposition smuggling.
+    "starlette>=1.3.1",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.31",
+    # db
+    "sqlalchemy[asyncio]>=2.0.35",
+    "asyncpg>=0.30",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.13",
+    # config / models
+    "pydantic>=2.9",
+    "pydantic-settings>=2.14.2",  # (audit) <2.14.2 = secrets symlink escape (GHSA-4xgf-cpjx-pc3j)
+    "email-validator>=2.2",
+    # cache / queue
+    "redis[hiredis]>=5.1",
+    # auth
+    "pyjwt[crypto]>=2.13",
+    # bot
+    "aiogram>=3.13",
+    # http
+    "httpx>=0.27",
+    # utils
+    "orjson>=3.10",
+    "python-dotenv>=1.0",
+    "structlog>=24.4",
+    # background jobs (Round 18+) — APScheduler over Celery: single-process,
+    # no extra worker daemon, persists job state in the Postgres via SQLAlchemy
+    # jobstore so a Fly machine restart doesn't lose schedule.
+    "apscheduler>=3.10",
+    # tzdata is pre-installed on Python 3.12 stdlib but APScheduler's pytz fallback
+    # path expects pytz on some Alpine images.
+    "pytz>=2024.1",
+    # PDF generation (Round 19 — contracts + receipts). WeasyPrint requires
+    # pango/cairo system libs (see Dockerfile). Jinja2 already pulled in
+    # transitively by FastAPI for the template engine; we instantiate our
+    # own Environment to keep contract templates isolated from any future
+    # html-response use.
+    "weasyprint>=69",
+    "jinja2>=3.1",
+    # Reports xlsx export (Round 24).
+    "openpyxl>=3.1",
+    # Image optimization (Round 32) — downscale + WebP-convert catalog/product
+    # media before storing on archive.org. Free, no external service.
+    "pillow>=12.3",
+    "sentry-sdk[fastapi]>=2.0",
+    "prometheus-fastapi-instrumentator>=7.0",
+    # PDF structure validation for uploaded payment proofs. Pure Python,
+    # BSD-3-Clause, no system libraries. Needed because a page tree can live
+    # inside a compressed object stream, where a regex cannot reach it.
+    #
+    # Floor raised 6.14.2 → 6.15.0 on 2026-08-13, clearing CVE-2026-71870 and
+    # CVE-2026-71852 (PYSEC-2026-3655 / PYSEC-2026-3656): memory/CPU exhaustion
+    # while parsing `/ToUnicode` and font width entries DURING TEXT EXTRACTION.
+    #
+    # The bump was deliberately held. 6.15.0 was published 2026-08-06, inside the
+    # 7-day `exclude-newer` cooldown above, and waiting was chosen over exempting
+    # the package — exactly the precedent the cryptography floor below set. The
+    # window opened on 2026-08-13 and the floor was raised the same day, which is
+    # what `tests/test_dated_dependency_floors.py` existed to force.
+    #
+    # Note what is NOT the reason it is fixed. The old comment argued the CVE was
+    # unreachable because `app/core/upload_guard.py` reads the page tree and
+    # object keys without extracting text. That was true and it was never a
+    # substitute for upgrading: "our current call sites do not reach it" is a
+    # claim about today's code, re-earned by every future caller, and the first
+    # feature that extracts text from an uploaded PDF would silently spend it.
+    "pypdf>=6.15.0,<7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-redis",
+]
+
+[tool.uv]
+exclude-newer = "7 days"
+# ↑ (audit/supply-chain) Cooldown: ignore versions published in the last 7 days so
+# a rebuild can't auto-pull a freshly-published malicious/unstable release.
+#
+# PLACEMENT IS LOAD-BEARING — keep this on the first line under the uv table
+# header, with nothing above it. Semgrep's uv-missing-dependency-cooldown rule
+# scans only a few lines past that header, so pushing the setting down reports the
+# cooldown as ABSENT even though it is set. Two further traps, both hit for real
+# while writing this: the rule matches the header as plain text, so writing the
+# bracketed table name inside a comment invents a phantom second section that
+# trips the same finding; and a scanner that cannot see a control is one nobody
+# defends at the next audit.
+
+# (#235) aiogram (latest, 3.28.x) still pins aiohttp<3.14, which holds aiohttp on a
+# release carrying two CVEs (CVE-2026-34993, CVE-2026-47265 — fixed in aiohttp 3.14).
+# No aiogram release lifts that ceiling yet, so we override the transitive pin to pull
+# aiohttp >=3.14. Verified safe: the app never imports aiohttp directly (httpx is its
+# HTTP client) — aiohttp is used only by aiogram's Telegram client, which constructs
+# and drives an aiohttp 3.14 ClientSession unchanged. Remove this override once aiogram
+# allows aiohttp>=3.14 upstream (then aiogram>=3.13 resolves aiohttp 3.14 on its own).
+override-dependencies = [
+    # Floor raised 3.14.1 → 3.14.3 on 2026-08-05: CVE-2026-69244 (HIGH) affects
+    # 3.14.1 and is fixed in 3.14.3. 3.14.3 was published 2026-07-23, so it is
+    # well past the cooldown below and resolves without exempting anything.
+    "aiohttp>=3.14.3",
+    # (audit) cryptography is transitive (PyJWT[crypto]); force the
+    # patched floor — <48.0.1 ships a vulnerable bundled OpenSSL (GHSA-537c-gmf6-5ccf).
+    #
+    # Floor raised to 50.0.0 on 2026-08-09, clearing CVE-2026-69247 (which
+    # affected the previously-resolved 49.0.0).
+    #
+    # The bump was deliberately held: 50.0.0 was published 2026-07-31, inside
+    # the 7-day `exclude-newer` cooldown, and waiting was chosen over exempting
+    # the package — the cooldown exists precisely to stop a rebuild pulling a
+    # freshly-published release. Trivy and pip-audit failed for that week by
+    # design. The window opened on 2026-08-07.
+    #
+    # A dated deferral is only safe while somebody honours the date: this one
+    # was two days past it, so a known-vulnerable dependency was serving
+    # production traffic. If another is ever written, give it an alarm and not
+    # just a comment.
+    "cryptography>=50.0.0",
+]
+# NOTE: `exclude-newer` is NOT here — it now sits on the first line of this table,
+# where the security scanner can actually see it. Do not re-add it below.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Alembic migrations are generated and carry large Uzbek seed-data blocks; they
+# are linted by their own conventions, not the app rules.
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E501",                        # line length — the formatter's job
+    "E402",                        # intentional mid-file section imports in API routers
+    "E701", "E702",                # compound one-line statements — an existing codebase idiom
+    "RUF001", "RUF002", "RUF003",  # ambiguous-unicode: false positives on Uzbek/Cyrillic text
+    "UP042",                       # str+Enum → StrEnum: changes str(member) semantics; deferred
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency-injection markers are intentionally called in arg defaults.
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.File", "fastapi.Form",
+    "fastapi.Header", "fastapi.Path", "fastapi.Body", "fastapi.Cookie",
+]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+# Pragmatic baseline for a large existing codebase: not strict, but it catches
+# real type errors (None-safety, bad arguments). Generated migrations, one-off
+# scripts, and tests are out of scope.
+exclude = ['^alembic/', '^scripts/', '^tests/']
+warn_unused_ignores = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# -rs: print each skip's reason in the summary. Without it, a local run of
+# `pytest` reports e.g. "1171 skipped" with no indication that's the entire
+# integration tier (TEST_DATABASE_URL unset outside CI) rather than a handful
+# of environment-specific tests (MUDD-70 M-1).
+addopts = "-rs"
+markers = [
+    "integration: needs TEST_DATABASE_URL (a real Postgres) — runs in CI only",
+]

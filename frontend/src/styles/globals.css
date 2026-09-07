@@ -1,0 +1,226 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* cache-bust: 2026-06-02 — force a fresh asset hash so stale/corrupt CDN-cached
+ * stylesheets are bypassed by a new immutable URL. */
+
+/* ---------------------------------------------------------------------------
+ * Design tokens — sampled directly from the Muddato mockup.
+ * oklch chosen wherever the source bundle used it, so colours stay 1:1.
+ * ------------------------------------------------------------------------- */
+:root {
+  /* Design tokens aligned 1:1 to the Muddato product prototype (oklch). */
+  --c-cream:        oklch(0.985 0.005 80);        /* page background — warm cream (--bg) */
+  --c-bg-soft:      oklch(0.96 0.012 75);         /* inset / secondary warm surface (--bg-soft) */
+  --c-surface:      #ffffff;                       /* cards, sidebar, modals */
+  --c-ink:          oklch(0.18 0.02 265);          /* primary text (ink-900) */
+  --c-ink-soft:     oklch(0.34 0.02 265);          /* secondary text (ink-700) */
+  --c-muted:        oklch(0.55 0.015 265);         /* tertiary / hints (ink-500) */
+  --c-ink-300:      oklch(0.82 0.008 265);         /* faint text / strong dividers (ink-300) */
+  --c-line:         rgba(20, 22, 28, 0.06);        /* hairlines */
+
+  --c-accent:       oklch(0.64 0.18 38);           /* primary terracotta (--primary) — dots/fills/active/charts */
+  --c-accent-light: oklch(0.78 0.14 45);           /* lighter terracotta (--primary-light) — gradients/hover */
+  --c-accent-soft:  oklch(0.64 0.18 38 / 0.16);    /* tinted bg for accent badges / icon tiles (--primary-soft) */
+  --c-accent-ink:   #ffffff;                       /* text on accent surfaces */
+
+  /* WCAG AA (>=4.5:1) variants. Bright hues above stay for fills, chart series,
+   * status dots and large/decorative use; tokens below are for small TEXT:
+   * `-strong` = coloured text on the matching *-soft tint; `--c-accent-fill` =
+   * a solid fill that white text passes AA on (primary button). */
+  --c-accent-strong:  oklch(0.47 0.135 40);        /* text on accent-soft (AA) */
+  --c-accent-fill:    oklch(0.555 0.16 40);        /* solid fill, white text passes AA (primary button) */
+
+  --c-success:      #2f8a5b;
+  --c-success-soft: rgba(47, 138, 91, 0.14);
+  --c-success-strong: #1f6b46;                     /* on success-soft -> 5.46:1 */
+  --c-warn:         #c98b2e;
+  --c-warn-soft:    rgba(201, 139, 46, 0.16);
+  --c-warn-strong:  #80560f;                       /* on warn-soft    -> 5.52:1 */
+  --c-danger:       #c0473d;
+  --c-danger-soft:  rgba(192, 71, 61, 0.14);
+  --c-danger-strong: #9c362c;                      /* on danger-soft  -> 5.79:1 */
+  --c-info:         #2f6fb0;                        /* (#629) informational blue */
+  --c-info-soft:    rgba(47, 111, 176, 0.14);
+  --c-info-strong:  #1f4f80;                        /* on info-soft    -> ~6:1 */
+
+  --c-brand-telegram: #27A6E5;                     /* (#627) Telegram brand blue */
+  /* (#627) Avatar swatch palette — stable per-name background hues; 2-4 reuse
+   * the brand tokens so a brand change propagates instead of drifting. */
+  --c-avatar-1: #1c1f29;
+  --c-avatar-2: var(--c-accent);
+  --c-avatar-3: var(--c-success);
+  --c-avatar-4: var(--c-warn);
+  --c-avatar-5: #4f6e9d;
+  --c-avatar-6: #7a4f9d;
+
+  /* (#631) Categorical data-viz palette for multi-series charts. chart-1 is the
+   * brand accent so single-series charts (Spark line, ProgressRing) are
+   * unchanged; 2-8 are the Okabe-Ito colour-blind-safe set, distinguishable
+   * under protan/deutan/tritan simulation. Consumed via @/lib/chartColors. */
+  /* Ordered so the first 6 (covering the common 2-6 series cases) each clear
+   * >=3:1 against the white chart background (WCAG 1.4.11); the two lighter
+   * hues that can't (sky blue, yellow) sit at 7-8, reached only by 7+ series. */
+  --c-chart-1: var(--c-accent);             /* #e07347 brand orange (3.13:1 / white) */
+  --c-chart-2: #0072b2;                     /* blue        (5.19:1) */
+  --c-chart-3: #009e73;                     /* bluish green(3.42:1) */
+  --c-chart-4: #d55e00;                     /* vermillion  (3.87:1) */
+  --c-chart-5: #cc79a7;                     /* reddish purple (3.06:1) */
+  --c-chart-6: #777777;                     /* neutral grey(4.48:1) */
+  --c-chart-7: #56b4e9;                     /* sky blue    (2.31:1) */
+  --c-chart-8: #e6c200;                     /* yellow      (1.74:1) */
+  --c-chart-axis:   #9aa1ad;                /* axis ticks / labels */
+  --c-chart-grid:   rgba(20, 22, 28, 0.06); /* gridlines (= --c-line) */
+  --c-chart-nodata: rgba(20, 22, 28, 0.06); /* empty / no-data fill */
+}
+
+/* Telegram Mini-App insets. Default to the OS notch via env(); the
+ * telegramViewport module overrides these with Telegram's real safe-area /
+ * content-safe-area values (Bot API 8.0+) on launch, so layout clears both the
+ * notch AND Telegram's floating header on every platform. Older clients keep
+ * the env() fallback. Use these vars in layout instead of raw env(). */
+:root {
+  --tg-safe-top: env(safe-area-inset-top, 0px);
+  --tg-safe-right: env(safe-area-inset-right, 0px);
+  --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tg-safe-left: env(safe-area-inset-left, 0px);
+  --tg-content-top: 0px;
+  --tg-content-right: 0px;
+  --tg-content-bottom: 0px;
+  --tg-content-left: 0px;
+  --tg-inset-top: env(safe-area-inset-top, 0px);
+  --tg-inset-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Cross-browser baseline */
+html, body, #root { height: 100%; }
+body { font-family: 'Inter Tight', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+
+/* Never scroll the PAGE horizontally — a stray too-wide element clips instead of
+ * forcing a bottom scrollbar on small screens. `clip` (not `hidden`) doesn't
+ * create a scroll container, so position:sticky keeps working. Genuinely wide
+ * content (data tables) keeps its own opt-in overflow-x-auto scroller. */
+body { overflow-x: clip; }
+
+/* The other half of disabling zoom. iOS Safari has ignored `user-scalable=no`
+ * since iOS 10, so the viewport meta alone does nothing there; `manipulation`
+ * is what actually removes double-tap-to-zoom, and it also drops the 300ms
+ * click delay that came with it. Pinch-zoom cannot be blocked on iOS without
+ * intercepting gesture events, which is not worth doing — accidental DOUBLE-TAP
+ * is the one this product actually hits. */
+body { touch-action: manipulation; }
+
+/* Hide scrollbars entirely (Telegram-native feel) — no visible track/thumb and
+ * NO reserved gutter, on every element + axis. Scrolling still works (wheel,
+ * touch, drag, keyboard); we only remove the chrome. Firefox/IE via
+ * scrollbar-width/-ms-overflow-style; WebKit/Blink via the pseudo-element. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* Numerals — keep tabular figures inside data-heavy cells. */
+.num, table, [data-tabular] { font-variant-numeric: tabular-nums; }
+
+/* Smooth scroll for hash links. */
+html { scroll-behavior: smooth; }
+
+/* (#641) Honor the OS "reduce motion" setting globally. Neutralizes every
+ * animation/transition (spinners, pulses, slide-ins, the ~74 animate-* usages)
+ * and disables smooth-scroll, without touching any component. Standard reset. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* iOS Safari zooms the whole page when a focused field's font-size is < 16px.
+ * Force 16px on text-entry controls at phone widths so tapping a search box or
+ * any input never triggers that zoom. Desktop keeps its designed sizes. (#31) */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* (#637) Global keyboard focus ring — WCAG 2.2 SC 2.4.7. Every focusable control
+ * (sidebar/bottom-nav links, filter & menu controls, chips, etc.) gets a visible
+ * focus indicator. :focus-visible matches only keyboard/AT focus, so mouse and
+ * touch are unaffected. Uses an outline rather than a box-shadow ring so it never
+ * double-draws on Button/DataTable, which already ship the focus-visible:ring-2
+ * pattern — those suppress this outline via the rule below. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[role='button']:focus-visible,
+[role='option']:focus-visible,
+[role='tab']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='switch']:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--c-accent-strong, #9a4a23);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* Controls that already render their own focus-visible ring keep just the ring. */
+.focus-visible\:ring-2:focus-visible { outline: none; }
+
+/* (#643) Comfortable >=44px touch target for icon-only controls on coarse
+   pointers (phones/tablets). Fine pointers (mouse) keep the compact desktop
+   size — this only enlarges the hit area where fingers tap. */
+@media (pointer: coarse) {
+  .tap-target { min-width: 2.75rem; min-height: 2.75rem; }
+}
+
+/* Custom utilities */
+@layer utilities {
+  .kicker { @apply text-micro uppercase tracking-kicker text-muted font-medium; }
+  /* `.kicker`'s `--c-muted` is chosen against the page background and drops
+   * to ~1.5:1 on a filled accent surface. Same type ramp, the surface's own
+   * foreground token: white on `--c-accent-fill` is 5.10:1 (AA).
+   * Spelled out rather than `@apply kicker text-accent-ink` — both set
+   * `color`, and @apply's ordering leaves `.kicker`'s grey winning. */
+  .kicker-on-accent { @apply text-micro uppercase tracking-kicker font-medium text-accent-ink; }
+  .card   { @apply rounded-card bg-surface shadow-card border border-line; }
+  .pill   { @apply inline-flex items-center rounded-pill px-2.5 py-0.5 text-micro font-medium tracking-wide; }
+
+  /* Heading classes bundle weight/tracking ONLY — every size comes from the
+   * `fontSize` scale via @apply, so a heading and the scale cannot drift apart.
+   * Do not add a `font-size` here; name the step in tailwind.config.js. */
+  .h-display { @apply text-display font-semibold; letter-spacing: -0.02em; }
+  .h-page    { @apply text-page-title font-semibold; letter-spacing: -0.02em; }
+  .h-section { @apply text-section font-semibold; letter-spacing: -0.01em; }
+  .h-sub     { @apply text-subsection font-semibold; }
+
+  /* Marketing/auth display heroes — deliberately larger than the admin scale.
+   * Font-size only; callers keep their own weight/tracking/leading. */
+  .h-hero    { @apply text-hero; }
+  .h-hero-2  { @apply text-hero-2; }
+  .h-hero-3  { @apply text-hero-3; }
+
+  /* Public-page vertical rhythm. `.section-band-lg` is the marketing home's
+   * own roomier step — it is not interchangeable with `.section-band`. */
+  .section-hero    { @apply py-16; }  /* a public page's opening band */
+  .section-band    { @apply py-12; }  /* every standard band below it */
+  .section-band-lg { @apply py-20; }  /* the marketing home's roomier band */
+
+  /* Bottom-nav tab label. Flat `text-micro` (11px), the readability floor —
+   * NOT a clamp: the bar is `md:hidden`, so a viewport-scaled ceiling is
+   * unreachable and phones would render below the floor. Labels wrap rather
+   * than truncate so every localized label stays complete; the reserved two
+   * lines keep all tabs the same height whether or not a label wraps. */
+  .nav-label {
+    @apply flex items-center justify-center text-center text-micro;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    min-height: calc(2 * 1.1 * 11px);
+    overflow-wrap: anywhere;
+  }
+}

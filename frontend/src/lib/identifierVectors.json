@@ -1,0 +1,320 @@
+{
+  "$comment": "Shared contract between backend/app/core/identifiers.py and frontend/src/lib/identifiers.ts. Both suites run EVERY case and must agree on the normalized value and the error code. Edit here, not in either suite: a rule that only one side enforces is a round-trip that fails after the shop has already typed.",
+  "cases": [
+    {
+      "name": "latin plain",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "SN-A1004",
+      "value": "SN-A1004",
+      "error": null
+    },
+    {
+      "name": "latin all separators",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "AB_12/34-56 X",
+      "value": "AB_12/34-56 X",
+      "error": null
+    },
+    {
+      "name": "latin case preserved",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "aBcDeF",
+      "value": "aBcDeF",
+      "error": null
+    },
+    {
+      "name": "outer space trimmed",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "  SN-1  ",
+      "value": "SN-1",
+      "error": null
+    },
+    {
+      "name": "inner run collapsed",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "SN   1",
+      "value": "SN 1",
+      "error": null
+    },
+    {
+      "name": "uzbek oq",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "SHARTNOMA-Oʻ12",
+      "value": "SHARTNOMA-Oʻ12",
+      "error": null
+    },
+    {
+      "name": "uzbek gq words",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "GʻALLA 2026/7",
+      "value": "GʻALLA 2026/7",
+      "error": null
+    },
+    {
+      "name": "cyrillic contract",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "ДОГОВОР-2026/15",
+      "value": "ДОГОВОР-2026/15",
+      "error": null
+    },
+    {
+      "name": "cyrillic shartnoma",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "ШАРТНОМА-А12",
+      "value": "ШАРТНОМА-А12",
+      "error": null
+    },
+    {
+      "name": "cyrillic seriya",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "СЕРИЯ_Б-44",
+      "value": "СЕРИЯ_Б-44",
+      "error": null
+    },
+    {
+      "name": "cyrillic lowercase",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "договор",
+      "value": "договор",
+      "error": null
+    },
+    {
+      "name": "cyrillic decomposed nfc",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "Й-7",
+      "value": "Й-7",
+      "error": null
+    },
+    {
+      "name": "mixed scripts",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "ABC-123/Д_44",
+      "value": "ABC-123/Д_44",
+      "error": null
+    },
+    {
+      "name": "digits only serial",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "0001",
+      "value": "0001",
+      "error": null
+    },
+    {
+      "name": "emoji rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "ДОГОВОР😀",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "markup rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "<b>A</b>",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "ampersand rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A&B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "double quote rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A\"B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "apostrophe rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A'B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "curly quote rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A’B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "backslash rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A\\B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "comma rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A,B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "colon rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A:B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "plus rejected",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A+B",
+      "value": null,
+      "error": "identifier_illegal_characters"
+    },
+    {
+      "name": "zero width space removed",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "A​B",
+      "value": "AB",
+      "error": null
+    },
+    {
+      "name": "bidi override removed",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "ДОГ‮15",
+      "value": "ДОГ15",
+      "error": null
+    },
+    {
+      "name": "soft hyphen removed",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "SN­-1",
+      "value": "SN-1",
+      "error": null
+    },
+    {
+      "name": "variation selector removed",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "SN️1",
+      "value": "SN1",
+      "error": null
+    },
+    {
+      "name": "only invisibles is blank",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "​​",
+      "value": null,
+      "error": "identifier_required"
+    },
+    {
+      "name": "64 latin ok",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "error": null
+    },
+    {
+      "name": "65 latin too long",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "value": null,
+      "error": "identifier_too_long"
+    },
+    {
+      "name": "64 cyrillic ok",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "ДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДД",
+      "value": "ДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДД",
+      "error": null
+    },
+    {
+      "name": "65 cyrillic too long",
+      "type": "SERIAL_OR_CONTRACT",
+      "input": "ДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДДД",
+      "value": null,
+      "error": "identifier_too_long"
+    },
+    {
+      "name": "imei valid",
+      "type": "IMEI",
+      "input": "352099001761481",
+      "value": "352099001761481",
+      "error": null
+    },
+    {
+      "name": "imei label separators",
+      "type": "IMEI",
+      "input": "35-209900-176148-1",
+      "value": "352099001761481",
+      "error": null
+    },
+    {
+      "name": "imei bad checksum",
+      "type": "IMEI",
+      "input": "352099001761482",
+      "value": null,
+      "error": "identifier_imei_checksum"
+    },
+    {
+      "name": "imei too short",
+      "type": "IMEI",
+      "input": "35209900176148",
+      "value": null,
+      "error": "identifier_imei_length"
+    },
+    {
+      "name": "imei too long",
+      "type": "IMEI",
+      "input": "3520990017614811",
+      "value": null,
+      "error": "identifier_imei_length"
+    },
+    {
+      "name": "imei latin letter",
+      "type": "IMEI",
+      "input": "35209900176148A",
+      "value": null,
+      "error": "identifier_imei_not_numeric"
+    },
+    {
+      "name": "imei cyrillic letter",
+      "type": "IMEI",
+      "input": "35209900176148Д",
+      "value": null,
+      "error": "identifier_imei_not_numeric"
+    },
+    {
+      "name": "imei blank",
+      "type": "IMEI",
+      "input": "   ",
+      "value": null,
+      "error": "identifier_required"
+    },
+    {
+      "name": "no type no value",
+      "type": null,
+      "input": "",
+      "value": null,
+      "error": null
+    },
+    {
+      "name": "no type with value",
+      "type": null,
+      "input": "SN-1",
+      "value": null,
+      "error": "identifier_type_unknown"
+    },
+    {
+      "name": "legacy never submitted",
+      "type": "LEGACY_UNVERIFIED",
+      "input": "SN-1",
+      "value": null,
+      "error": "identifier_type_unknown"
+    },
+    {
+      "name": "unknown type",
+      "type": "MYSTERY",
+      "input": "SN-1",
+      "value": null,
+      "error": "identifier_type_unknown"
+    }
+  ]
+}

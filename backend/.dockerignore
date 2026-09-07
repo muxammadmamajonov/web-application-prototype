@@ -1,0 +1,16 @@
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.git
+.gitignore
+*.md
+tests
+# (F-29) Never bake local secrets into the image. A developer-created backend/.env
+# (or .env.local, .env.production, …) must not be copied into the build context.
+# Keep the committed template so the image/docs can still reference it if needed.
+.env
+.env.*
+!.env.example

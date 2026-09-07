@@ -1,0 +1,201 @@
+{
+  "$comment": "Shared contract between backend/app/core/catalog_identifiers.py and frontend/src/lib/catalogIdentifiers.ts. Both suites run EVERY case and must agree on the normalized value and the error code. Edit here, not in either suite: a rule that only one side enforces is a round-trip that fails after the shop has already typed (same pattern as identifierVectors.json / identifiers.ts / identifiers.py).",
+  "cases": [
+    {
+      "name": "imei valid",
+      "field": { "required": true, "validator": "imei", "min_len": 15, "max_len": 15 },
+      "input": "352099001761481",
+      "value": "352099001761481",
+      "error": null
+    },
+    {
+      "name": "imei bad luhn check digit",
+      "field": { "required": true, "validator": "imei", "min_len": 15, "max_len": 15 },
+      "input": "352099001761482",
+      "value": null,
+      "error": "catalog_identifier_imei_checksum"
+    },
+    {
+      "name": "imei too short",
+      "field": { "required": true, "validator": "imei", "min_len": 15, "max_len": 15 },
+      "input": "35209900176148",
+      "value": null,
+      "error": "catalog_identifier_imei_length"
+    },
+    {
+      "name": "imei non numeric",
+      "field": { "required": true, "validator": "imei", "min_len": 15, "max_len": 15 },
+      "input": "35209900176148X",
+      "value": null,
+      "error": "catalog_identifier_imei_not_numeric"
+    },
+    {
+      "name": "imei scanner separators stripped",
+      "field": { "required": true, "validator": "imei", "min_len": 15, "max_len": 15 },
+      "input": "35-209900-176148-1",
+      "value": "352099001761481",
+      "error": null
+    },
+    {
+      "name": "imei blank required",
+      "field": { "required": true, "validator": "imei", "min_len": 15, "max_len": 15 },
+      "input": "",
+      "value": null,
+      "error": "catalog_identifier_required"
+    },
+    {
+      "name": "vin valid",
+      "field": { "required": true, "validator": "vin", "min_len": 17, "max_len": 17 },
+      "input": "1HGCM82633A004352",
+      "value": "1HGCM82633A004352",
+      "error": null
+    },
+    {
+      "name": "vin wrong length",
+      "field": { "required": true, "validator": "vin", "min_len": 17, "max_len": 17 },
+      "input": "1HGCM82633A00435",
+      "value": null,
+      "error": "catalog_identifier_vin_length"
+    },
+    {
+      "name": "vin excluded letter I",
+      "field": { "required": true, "validator": "vin", "min_len": 17, "max_len": 17 },
+      "input": "IHGCM82633A004352",
+      "value": null,
+      "error": "catalog_identifier_vin_charset"
+    },
+    {
+      "name": "vin excluded letter O",
+      "field": { "required": true, "validator": "vin", "min_len": 17, "max_len": 17 },
+      "input": "OHGCM82633A004352",
+      "value": null,
+      "error": "catalog_identifier_vin_charset"
+    },
+    {
+      "name": "vin excluded letter Q",
+      "field": { "required": true, "validator": "vin", "min_len": 17, "max_len": 17 },
+      "input": "QHGCM82633A004352",
+      "value": null,
+      "error": "catalog_identifier_vin_charset"
+    },
+    {
+      "name": "vin case and separator tolerant",
+      "field": { "required": true, "validator": "vin", "min_len": 17, "max_len": 17 },
+      "input": "1hgcm82633a004352",
+      "value": "1HGCM82633A004352",
+      "error": null
+    },
+    {
+      "name": "inventory plain tag",
+      "field": { "required": true, "validator": "inventory", "min_len": 3, "max_len": 24 },
+      "input": "INV-2026-014",
+      "value": "INV-2026-014",
+      "error": null
+    },
+    {
+      "name": "inventory under min_len",
+      "field": { "required": true, "validator": "inventory", "min_len": 3, "max_len": 24 },
+      "input": "AB",
+      "value": null,
+      "error": "catalog_identifier_too_short"
+    },
+    {
+      "name": "inventory illegal characters",
+      "field": { "required": true, "validator": "inventory", "min_len": 3, "max_len": 24 },
+      "input": "INV#2026!",
+      "value": null,
+      "error": "catalog_identifier_inventory_format"
+    },
+    {
+      "name": "inventory cyrillic tag",
+      "field": { "required": true, "validator": "inventory", "min_len": 3, "max_len": 24 },
+      "input": "ИНВ-001",
+      "value": "ИНВ-001",
+      "error": null
+    },
+    {
+      "name": "inventory internal space tag",
+      "field": { "required": true, "validator": "inventory", "min_len": 3, "max_len": 24 },
+      "input": "INV 001",
+      "value": "INV 001",
+      "error": null
+    },
+    {
+      "name": "mac valid upper cased",
+      "field": { "required": false, "validator": "mac", "min_len": 17, "max_len": 17 },
+      "input": "aa:bb:cc:11:22:33",
+      "value": "AA:BB:CC:11:22:33",
+      "error": null
+    },
+    {
+      "name": "mac malformed",
+      "field": { "required": false, "validator": "mac", "min_len": 17, "max_len": 17 },
+      "input": "not-a-mac",
+      "value": null,
+      "error": "catalog_identifier_mac_format"
+    },
+    {
+      "name": "mac blank optional",
+      "field": { "required": false, "validator": "mac", "min_len": 17, "max_len": 17 },
+      "input": "",
+      "value": null,
+      "error": null
+    },
+    {
+      "name": "mac zero width space only is not captured",
+      "field": { "required": false, "validator": "mac", "min_len": 17, "max_len": 17 },
+      "input": "​",
+      "value": null,
+      "error": null
+    },
+    {
+      "name": "plate valid",
+      "field": { "required": false, "validator": "plate", "min_len": 6, "max_len": 12 },
+      "input": "01A123BC",
+      "value": "01A123BC",
+      "error": null
+    },
+    {
+      "name": "plate illegal characters",
+      "field": { "required": false, "validator": "plate", "min_len": 6, "max_len": 12 },
+      "input": "01-A123-BC",
+      "value": null,
+      "error": "catalog_identifier_plate_format"
+    },
+    {
+      "name": "plate blank optional",
+      "field": { "required": false, "validator": "plate", "min_len": 6, "max_len": 12 },
+      "input": "",
+      "value": null,
+      "error": null
+    },
+    {
+      "name": "generic serial over max_len",
+      "field": { "required": false, "validator": "serial", "min_len": 4, "max_len": 40 },
+      "input": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "value": null,
+      "error": "catalog_identifier_too_long"
+    },
+    {
+      "name": "generic serial under min_len",
+      "field": { "required": false, "validator": "serial", "min_len": 4, "max_len": 40 },
+      "input": "AB",
+      "value": null,
+      "error": "catalog_identifier_too_short"
+    },
+    {
+      "name": "generic serial invisible only normalizes to not captured",
+      "field": { "required": false, "validator": "serial", "min_len": 4, "max_len": 40 },
+      "input": "​",
+      "value": null,
+      "error": null
+    },
+    {
+      "name": "generic serial blank required is rejected",
+      "field": { "required": true, "validator": "serial", "min_len": 4, "max_len": 40 },
+      "input": "",
+      "value": null,
+      "error": "catalog_identifier_required"
+    }
+  ]
+}

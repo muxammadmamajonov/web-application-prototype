@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<style>
+  @page { size: A4; margin: 22mm 18mm; }
+  body { font-family: "Noto Sans", "DejaVu Sans", sans-serif; color: #1a1a1a; font-size: 12px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .muted { color: #6b7280; }
+  .row { display: flex; justify-content: space-between; align-items: flex-start; }
+  .box { margin-top: 18px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f9fafb; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: #6b7280; }
+  td.num, th.num { text-align: right; }
+  .total { font-size: 16px; font-weight: 700; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .pill.open { background: #fef3c7; color: #92400e; }
+  .pill.paid { background: #dcfce7; color: #166534; }
+  .pill.overdue { background: #fee2e2; color: #991b1b; }
+  .pill.void { background: #f3f4f6; color: #6b7280; }
+  .foot { margin-top: 32px; font-size: 10px; color: #9ca3af; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div>
+      <h1>Muddato</h1>
+      <div class="muted">Obuna hisob-fakturasi</div>
+    </div>
+    <div style="text-align:right">
+      <div><strong>№</strong> {{ invoice.id_short }}</div>
+      <div class="muted">{{ invoice.issued_at }}</div>
+      <div style="margin-top:6px"><span class="pill {{ invoice.status }}">{{ invoice.status_label }}</span></div>
+    </div>
+  </div>
+
+  <div class="box row">
+    <div>
+      <div class="muted">Hisob egasi</div>
+      <div><strong>{{ tenant.name }}</strong></div>
+      {% if tenant.billing_email %}<div class="muted">{{ tenant.billing_email }}</div>{% endif %}
+    </div>
+    <div style="text-align:right">
+      <div class="muted">To'lov muddati</div>
+      <div><strong>{{ invoice.due_at }}</strong></div>
+      <div class="muted" style="margin-top:6px">Davr</div>
+      <div>{{ invoice.period_start }} — {{ invoice.period_end }}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Tavsif</th>
+        <th class="num">Soni</th>
+        <th class="num">Narx</th>
+        <th class="num">Jami</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td>{{ line.label }}</td>
+        <td class="num">{{ line.qty }}</td>
+        <td class="num">{{ line.unit_price }}</td>
+        <td class="num">{{ line.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3" class="num total">Jami to'lov</td>
+        <td class="num total">{{ invoice.amount }} so'm</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="foot">
+    Ushbu hujjat Muddato platformasi tomonidan avtomatik shakllantirildi.
+    Savollar bo'yicha qo'llab-quvvatlash xizmatiga murojaat qiling.
+  </div>
+</body>
+</html>

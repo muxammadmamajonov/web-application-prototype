@@ -1,0 +1,226 @@
+<!doctype html>
+{# Default Uzbek installment contract.
+
+   LEGAL REVIEW IS AN OPERATIONAL GATE, NOT A MARK ON THE DOCUMENT. This
+   template previously printed `[LEGAL_REVIEW]` in a highlighted box inside the
+   customer's own copy — an internal note about our uncertainty, handed to the
+   person who is signing. The clauses it flagged are retention of title and
+   repossession, both of which are ordinary in UZ shop-customer practice; they
+   are now stated in neutral terms that the product's own data supports, and
+   NOTHING is asserted about statute that we have not had reviewed.
+
+   The review itself is tracked as an operational gate outside this file. A
+   marker in a contract is not a reminder to us — nobody on the team reads the
+   customer's PDF — it is a defect in their document.
+
+   Tenants may override the whole template via
+   TenantSettings.contract_template_html (Pro+ plan).
+#}
+<html lang="uz">
+<head>
+<meta charset="utf-8" />
+<title>Bo'lib to'lash shartnomasi № {{ installment.contract_number }}</title>
+<style>
+  /* The bottom margin RESERVES the footer's band. The footer was `position:
+     fixed` inside a page box whose margin did not account for it, so on a full
+     page it printed on top of the closing clauses. Putting it in the page's
+     own @bottom-center margin box means the engine lays the text out above it
+     rather than under it. */
+  @page {
+    size: A4;
+    margin: 18mm 15mm 24mm;
+    @bottom-center {
+      /* `element()` PULLS the running element into the margin box. The
+         `string-set`/`string()` pair would have left the carrier in the flow
+         as a hidden-but-laid-out box, printing the footer text twice. */
+      content: element(doc-footer);
+    }
+  }
+  * { box-sizing: border-box; }
+  /* A shop name, a customer name and a product name are all user text with no
+     spaces guaranteed anywhere in them. Without this, one long token pushes a
+     table column past the page edge and the text is clipped. */
+  body, td, th, dd, dt, li { overflow-wrap: anywhere; word-break: normal; }
+  body {
+    font-family: "DejaVu Sans", "Noto Sans", sans-serif;
+    font-size: 10pt; color: #222; line-height: 1.4;
+  }
+  header { display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #222; padding-bottom: 10px; }
+  header img { max-height: 48px; max-width: 96px; }
+  header .biz { flex: 1; }
+  header h1 { margin: 0; font-size: 16pt; font-weight: 700; }
+  header .meta { font-size: 9pt; color: #555; margin-top: 2px; }
+  h2 { font-size: 12pt; margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th, td { text-align: left; padding: 4px 6px; border: 1px solid #ccc; font-size: 9.5pt; }
+  th { background: #f5f3ee; font-weight: 600; }
+  td.right { text-align: right; font-variant-numeric: tabular-nums; }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 4px 12px; font-size: 10pt; }
+  .kv dt { font-weight: 600; color: #444; }
+  .kv dd { margin: 0; }
+  .signs { display: flex; gap: 32px; margin-top: 36px; }
+  .signs .col { flex: 1; }
+  .signs .line { border-bottom: 1px solid #222; margin-top: 28px; height: 1px; }
+  .signs .lbl { font-size: 9pt; color: #666; margin-top: 4px; }
+  .clauses { font-size: 9pt; color: #333; }
+  .clauses li { margin-bottom: 4px; }
+  .number-col { width: 36px; text-align: center; }
+  /* Deterministic page breaks: a heading never ends a page alone, a table row
+     never splits across one, and the signature block stays whole. */
+  h2 { break-after: avoid; break-inside: avoid; }
+  tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+  .signs, .kv { break-inside: avoid; }
+  .clauses li { break-inside: avoid; }
+  /* Removed from the normal flow and rendered only in the page margin box. */
+  .doc-footer {
+    position: running(doc-footer);
+    font-size: 8pt; color: #777; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  {% if tenant.logo_url %}<img src="{{ tenant.logo_url }}" alt="" />{% endif %}
+  <div class="biz">
+    <h1>{{ settings_block.business_name or tenant.name }}</h1>
+    <div class="meta">
+      {%- if tenant.address %}{{ tenant.address }}{% endif -%}
+      {%- if tenant.phone %} · {{ tenant.phone }}{% endif -%}
+      {%- if tenant.email %} · {{ tenant.email }}{% endif -%}
+    </div>
+  </div>
+  <div style="text-align:right; font-size:9pt;">
+    <div><b>Sana:</b> {{ today }}</div>
+    <div><b>Shartnoma №</b> {{ installment.contract_number }}</div>
+  </div>
+</header>
+
+<h2>1. Tomonlar</h2>
+<div class="kv">
+  <dt>SOTUVCHI:</dt>
+  <dd>{{ settings_block.business_name or tenant.name }}, manzil: {{ tenant.address or "—" }}</dd>
+  <dt>XARIDOR:</dt>
+  <dd>
+    {{ customer.full_name }}
+    {%- if customer.passport_id %}, pasport: {{ customer.passport_id }}{% endif -%}
+    {%- if customer.jshshir %}, JSHSHIR: {{ customer.jshshir }}{% endif -%}
+    {%- if customer.phone %}, tel: {{ customer.phone }}{% endif -%}
+    {%- if customer.address %}, manzil: {{ customer.address }}{% endif -%}
+  </dd>
+</div>
+
+<h2>2. Shartnoma predmeti</h2>
+<table>
+  <thead>
+    <tr>
+      <th class="number-col">№</th>
+      <th>Mahsulot</th>
+      <th>Variant / Seriya</th>
+      <th class="right">Soni</th>
+      <th class="right">Narxi</th>
+      <th class="right">Jami</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for it in items %}
+    <tr>
+      <td class="number-col">{{ loop.index }}</td>
+      <td>{{ it.name }}</td>
+      <td>{{ it.variant or '' }}{% if it.serial %} · {{ it.serial }}{% endif %}</td>
+      <td class="right">{{ it.qty }}</td>
+      <td class="right">{{ it.unit_price }}</td>
+      <td class="right">{{ it.line_total }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>3. To'lov sharti</h2>
+<div class="kv">
+  <dt>Jami summa:</dt><dd><b>{{ totals.total_amount }} {{ settings_block.currency_label }}</b></dd>
+  <dt>Boshlang'ich to'lov:</dt><dd>{{ totals.down_payment }} {{ settings_block.currency_label }}</dd>
+  <dt>Qarz (asosiy):</dt><dd>{{ totals.principal }} {{ settings_block.currency_label }}</dd>
+  <dt>Boshlanish sanasi:</dt><dd>{{ installment.start_date }}</dd>
+  <dt>Muddat:</dt><dd>{{ totals.months }} oy</dd>
+  <dt>Oylik to'lov:</dt><dd><b>{{ totals.monthly }} {{ settings_block.currency_label }}</b></dd>
+  <dt>To'lov sxemasi:</dt>
+  <dd>
+    {% if installment.calc_formula == 'annuity' %}Annuitet (teng oylik)
+    {% elif installment.calc_formula == 'differentiated' %}Differensial (asosiy teng)
+    {% elif installment.calc_formula == 'markup' %}Markaja narx ustamasi
+    {% else %}Foizsiz teng bo'lish
+    {% endif %}
+    {%- if installment.interest_rate %} · stavka: {{ installment.interest_rate }}/oy{% endif -%}
+  </dd>
+</div>
+
+<h2>4. To'lov jadvali</h2>
+<table>
+  <thead>
+    <tr>
+      <th class="number-col">№</th>
+      <th>Sana</th>
+      <th class="right">Summa</th>
+      <th>Imzo</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in schedule %}
+    <tr>
+      <td class="number-col">{{ row.n }}</td>
+      <td>{{ row.due_date }}</td>
+      <td class="right">{{ row.amount }}</td>
+      <td>&nbsp;</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>5. Tomonlarning huquq va majburiyatlari</h2>
+<ol class="clauses">
+  <li>Xaridor mahsulot to'lovini yuqoridagi jadvalga muvofiq, har oyning belgilangan sanasida amalga oshirishi shart.</li>
+  <li>Mahsulot xaridorga shartnoma imzolanishi va boshlang'ich to'lov amalga oshirilgandan so'ng topshiriladi.
+    Tomonlar kelishuviga binoan, mulk huquqi to'lov to'liq amalga oshirilgunga qadar sotuvchida saqlanadi.</li>
+  {% if installment.late_fee_pct_per_day %}
+  <li>To'lov muddati o'tib ketgan har bir kun uchun {{ installment.late_fee_pct_per_day }}% miqdorida penya hisoblanadi.</li>
+  {% else %}
+  <li>To'lov muddati o'tib ketgan taqdirda, penya sotuvchi tomonidan belgilangan va
+    xaridorga oldindan ma'lum qilingan tartibda hisoblanadi.</li>
+  {% endif %}
+  <li>Xaridor to'lovni 90 (to'qson) kundan ortiq kechiktirgan holatda, tomonlar shartnomani
+    bekor qilish va o'zaro hisob-kitob qilish masalasini kelishuv asosida hal qiladilar;
+    kelishuvga erishilmasa — qonunchilikda belgilangan tartibda.</li>
+  <li>Erta yopish: xaridor istalgan vaqtda qoldiq qarzni to'liq to'lab, shartnomani yopishi mumkin (agar tarif sozlamasiga ko'ra chegirma berilgan bo'lsa — ushbu chegirma qo'llaniladi).</li>
+  <li>Tomonlar kelishmovchiliklarni o'zaro muzokaralar yo'li bilan hal qilishadi; bo'lmasa — O'zbekiston Respublikasi qonunchiligiga muvofiq sud orqali.</li>
+</ol>
+
+<h2>6. Imzolar</h2>
+<div class="signs">
+  <div class="col">
+    <div class="lbl">SOTUVCHI:</div>
+    <div class="line"></div>
+    <div class="lbl">{{ settings_block.business_name or tenant.name }} nomidan vakil</div>
+  </div>
+  <div class="col">
+    <div class="lbl">XARIDOR:</div>
+    <div class="line"></div>
+    <div class="lbl">{{ customer.full_name }}</div>
+  </div>
+</div>
+
+{% if guarantors %}
+<h2>7. Kafil(lar)</h2>
+{% for g in guarantors %}
+<div class="kv">
+  <dt>Kafil №{{ loop.index }}:</dt>
+  <dd>{{ g.full_name }}{% if g.phone %} · {{ g.phone }}{% endif %}{% if g.passport_id %} · {{ g.passport_id }}{% endif %}</dd>
+</div>
+{% endfor %}
+{% endif %}
+
+<div class="doc-footer">Shartnoma {{ today }} sanasida tuzildi · {{ tenant.name }}</div>
+
+</body>
+</html>

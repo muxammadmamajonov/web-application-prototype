@@ -1,0 +1,6 @@
+# `/api/*` is served by the Pages Function at `functions/api/[[path]].ts`,
+# which proxies to https://muddato-api.fly.dev. The function takes precedence
+# over the SPA fallback below, so /api/* never falls through to index.html.
+
+# Cloudflare Pages SPA fallback — every other URL serves index.html so React Router can resolve it.
+/*    /index.html   200
