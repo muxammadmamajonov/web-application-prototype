@@ -74,7 +74,7 @@ dependencies = [
     # substitute for upgrading: "our current call sites do not reach it" is a
     # claim about today's code, re-earned by every future caller, and the first
     # feature that extracts text from an uploaded PDF would silently spend it.
-    "pypdf>=6.15.0,<7",
+    "pypdf>=6.15.0,<8",
 ]
 
 [dependency-groups]
